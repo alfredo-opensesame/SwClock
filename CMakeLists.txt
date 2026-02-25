@@ -111,11 +111,21 @@ target_link_libraries(monitor_demo PRIVATE swclock)
 target_include_directories(monitor_demo PRIVATE src/sw_clock)
 
 # Installation rules
-install(TARGETS swclock swclock_event_dump monitor_demo
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    RUNTIME DESTINATION bin
-)
+# Skip tool installation for iOS (not applicable)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    install(TARGETS swclock swclock_event_dump monitor_demo
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+        BUNDLE DESTINATION bin
+    )
+else()
+    # For iOS, only install the library (not the tools)
+    install(TARGETS swclock
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+    )
+endif()
 
 install(FILES ${SWCLOCK_HEADERS}
     DESTINATION include
