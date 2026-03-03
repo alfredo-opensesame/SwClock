@@ -86,7 +86,13 @@ void print_timespec_as_localtime(const struct timespec *ts)
         return;
 
     // Append fractional seconds and timezone abbreviation
-    printf("%s.%09ld %s\n", buf, nsec, tm_local.tm_zone ? tm_local.tm_zone : "");
+    char tz_abbr[32] = "";
+#ifdef __APPLE__
+    if (tm_local.tm_zone) snprintf(tz_abbr, sizeof(tz_abbr), "%s", tm_local.tm_zone);
+#else
+    strftime(tz_abbr, sizeof(tz_abbr), "%Z", &tm_local);
+#endif
+    printf("%s.%09ld %s\n", buf, nsec, tz_abbr);
 }
 
 /* Future of leap seconds

@@ -19,6 +19,9 @@ set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
 # Platform-specific settings
 if(APPLE)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__APPLE__")
+else()
+    # Linux: expose POSIX/GNU extensions (clockid_t, pthread_rwlock_t, CLOCK_* etc.)
+    add_compile_definitions(_GNU_SOURCE)
 endif()
 
 # Source files
