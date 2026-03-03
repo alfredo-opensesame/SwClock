@@ -204,9 +204,6 @@ static void swclock_pi_step(SwClock* c, double dt_s) {
     // Error is the remaining phase (seconds). Positive error => need faster time (positive ppm).
     double err_s = (double)c->remaining_phase_ns / 1e9;
 
-    // Integrator
-    c->pi_int_error_s += err_s * dt_s;
-
     // Two-stage gains: aggressive pull-in when far from lock, gentle tracking when close
     double kp, ki;
     if (llabs(c->remaining_phase_ns) > SWCLOCK_TRACKING_THRESHOLD_NS) {
@@ -217,8 +214,9 @@ static void swclock_pi_step(SwClock* c, double dt_s) {
         ki = SWCLOCK_PI_KI_FINE_PPM_PER_S2;
     }
 
-    // PI output in ppm
-    double u_ppm = (kp * err_s) + (ki * c->pi_int_error_s);
+    // PI output in ppm (using current integrator state before this step's update)
+    double u_ppm_unclamped = (kp * err_s) + (ki * c->pi_int_error_s);
+    double u_ppm = u_ppm_unclamped;
 
     // Clamp
     bool clamped = false;
@@ -231,12 +229,23 @@ static void swclock_pi_step(SwClock* c, double dt_s) {
         clamped = true;
     }
 
+    // Anti-windup: only integrate when the output is not saturated, or when the new
+    // error term would drive the integrator back toward zero (reducing the saturation).
+    // This prevents the integrator from winding up while the output is clamped, which
+    // would cause a large overshoot / sustained freq correction after lock.
+    bool anti_windup_block = clamped &&
+        ((u_ppm >= SWCLOCK_PI_MAX_PPM  && err_s > 0.0) ||
+         (u_ppm <= -SWCLOCK_PI_MAX_PPM && err_s < 0.0));
+    if (!anti_windup_block) {
+        c->pi_int_error_s += err_s * dt_s;
+    }
+
     c->pi_freq_ppm = u_ppm;
     
     // Log frequency clamp event if clamped
     if (clamped) {
         swclock_event_frequency_clamp_payload_t clamp_payload = {
-            .requested_ppm = (kp * err_s) + (ki * c->pi_int_error_s),
+            .requested_ppm = u_ppm_unclamped,
             .clamped_ppm = u_ppm,
             .max_ppm = SWCLOCK_PI_MAX_PPM
         };
