@@ -207,18 +207,18 @@ static void swclock_pi_step(SwClock* c, double dt_s) {
     // Integrator
     c->pi_int_error_s += err_s * dt_s;
 
-    // Two-stage gains: aggressive pull-in when far from lock, gentle tracking when close
-    double kp, ki;
-    if (llabs(c->remaining_phase_ns) > SWCLOCK_TRACKING_THRESHOLD_NS) {
-        kp = SWCLOCK_PI_KP_PPM_PER_S;
-        ki = SWCLOCK_PI_KI_PPM_PER_S2;
-    } else {
-        kp = SWCLOCK_PI_KP_FINE_PPM_PER_S;
-        ki = SWCLOCK_PI_KI_FINE_PPM_PER_S2;
-    }
-
     // PI output in ppm
-    double u_ppm = (kp * err_s) + (ki * c->pi_int_error_s);
+    double u_ppm = (SWCLOCK_PI_KP_PPM_PER_S * err_s) + (SWCLOCK_PI_KI_PPM_PER_S2 * c->pi_int_error_s);
+
+    // For active slewing (remaining_phase_ns != 0), ensure minimum slew rate
+    // to avoid excessive settling time for very small offsets
+    // Only apply if PI output is below minimum AND offset is small enough
+    if (c->remaining_phase_ns != 0 && fabs(err_s) < 0.01) {  // < 10ms offset
+        const double MIN_SLEW_PPM = 100.0;  // Minimum slew rate for ADJ_OFFSET
+        if (fabs(u_ppm) < MIN_SLEW_PPM) {
+            u_ppm = (c->remaining_phase_ns > 0) ? MIN_SLEW_PPM : -MIN_SLEW_PPM;
+        }
+    }
 
     // Clamp
     bool clamped = false;
@@ -236,7 +236,7 @@ static void swclock_pi_step(SwClock* c, double dt_s) {
     // Log frequency clamp event if clamped
     if (clamped) {
         swclock_event_frequency_clamp_payload_t clamp_payload = {
-            .requested_ppm = (kp * err_s) + (ki * c->pi_int_error_s),
+            .requested_ppm = (SWCLOCK_PI_KP_PPM_PER_S * err_s) + (SWCLOCK_PI_KI_PPM_PER_S2 * c->pi_int_error_s),
             .clamped_ppm = u_ppm,
             .max_ppm = SWCLOCK_PI_MAX_PPM
         };
@@ -372,22 +372,7 @@ SwClock* swclock_create(void) {
     c->base_rt_ns   = ts_to_ns(&sys_rt);
     c->base_mono_ns = ts_to_ns(&sys_mono_raw);
 
-    // Restore last learned frequency offset to eliminate cold-start transient
     c->freq_scaled_ppm    = 0;
-    {
-        FILE* sf = fopen("/tmp/swclock.freq_state", "r");
-        if (sf) {
-            long saved_freq = 0;
-            if (fscanf(sf, "%ld", &saved_freq) == 1) {
-                // Sanity check: reject values beyond 500 ppm (hardware gone)
-                double saved_ppm = (double)saved_freq / 65536.0;
-                if (saved_ppm >= -500.0 && saved_ppm <= 500.0) {
-                    c->freq_scaled_ppm = saved_freq;
-                }
-            }
-            fclose(sf);
-        }
-    }
     c->pi_freq_ppm        = 0.0;
     c->pi_int_error_s     = 0.0;
     c->pi_servo_enabled   = true;
@@ -492,15 +477,6 @@ void swclock_destroy(SwClock* c) {
             swclock_jsonld_close(c->jsonld_logger);
             c->jsonld_logger = NULL;
         }
-
-        // Persist learned frequency for next startup
-        {
-            FILE* sf = fopen("/tmp/swclock.freq_state", "w");
-            if (sf) {
-                fprintf(sf, "%ld\n", c->freq_scaled_ppm);
-                fclose(sf);
-            }
-        }
     }
     
     pthread_rwlock_destroy(&c->lock);
@@ -519,11 +495,6 @@ int swclock_gettime(SwClock* c, clockid_t clk_id, struct timespec *tp) {
     if (clk_id == CLOCK_MONOTONIC_RAW) {
         return clock_gettime(CLOCK_MONOTONIC_RAW, tp);
     }
-
-    // Sample hardware clock BEFORE acquiring lock to minimise scheduling-induced bias.
-    // The snapshot is taken as close as possible to the moment the caller needs the time.
-    struct timespec now_raw;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &now_raw);
 
     // Acquire read lock (non-exclusive) - multiple gettime() calls can proceed concurrently
     // Poll thread will not update while any reader holds the lock
@@ -548,6 +519,10 @@ int swclock_gettime(SwClock* c, clockid_t clk_id, struct timespec *tp) {
     double factor = c->cached_total_factor;
     
     pthread_rwlock_unlock(&c->lock);
+    
+    // Extrapolate current time from last poll state (outside lock)
+    struct timespec now_raw;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &now_raw);
     
     int64_t elapsed_raw_ns = ts_to_ns(&now_raw) - ts_to_ns(&ref_time);
     if (elapsed_raw_ns < 0) elapsed_raw_ns = 0;
@@ -615,8 +590,7 @@ int swclock_adjtime(SwClock* c, struct timex *tptr) {
         }
         long long before_phase = c->remaining_phase_ns;
         c->remaining_phase_ns += delta_ns;               // PI will work this down
-        // Preserve integrator so long-term frequency error keeps being corrected.
-        // Only reset the instantaneous PI output so the servo restarts from new error.
+        c->pi_int_error_s = 0.0;
         c->pi_freq_ppm    = 0.0;
         
         // JSON-LD logging

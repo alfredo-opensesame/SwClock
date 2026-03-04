@@ -35,13 +35,6 @@ extern "C" {
 // Limit the PI frequency correction (in ppm)
 #define SWCLOCK_PI_MAX_PPM       200.0   // ppm conservative default
 
-// Two-stage gain threshold: above this use pull-in gains, below use fine-tracking gains
-#define SWCLOCK_TRACKING_THRESHOLD_NS  100000LL  // 100 µs
-
-// Fine-tracking PI gains (engaged when |offset| < SWCLOCK_TRACKING_THRESHOLD_NS)
-#define SWCLOCK_PI_KP_FINE_PPM_PER_S    20.0   // ppm/s  - gentle proportional
-#define SWCLOCK_PI_KI_FINE_PPM_PER_S2    1.0   // ppm/s² - gentle integral
-
 // When the remaining phase error magnitude drops below this, zero the PI
 #define SWCLOCK_PHASE_EPS_NS     20000LL   // 20 µs
 
