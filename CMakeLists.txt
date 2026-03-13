@@ -85,13 +85,13 @@ if(GTest_FOUND AND GTEST_SOURCES)
     # Only link gtest_main which automatically includes gtest
     target_link_libraries(swclock_gtests PRIVATE swclock GTest::gtest_main)
     target_include_directories(swclock_gtests PRIVATE src/sw_clock src-gtests)
-    
+
     # Ensure logs directory exists for test output in project root
     add_custom_command(TARGET swclock_gtests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/logs
         COMMENT "Creating logs directory for test output in project root"
     )
-    
+
     # Add the test to CTest
     add_test(NAME SwClockGTests COMMAND swclock_gtests)
     message(STATUS "GoogleTest found - unit tests enabled")
@@ -103,15 +103,17 @@ else()
     message(STATUS "No gtest source files found in src-gtests/ directory")
 endif()
 
-# Build swclock_event_dump tool
-add_executable(swclock_event_dump src-tools/swclock_event_dump.c)
-target_link_libraries(swclock_event_dump PRIVATE swclock)
-target_include_directories(swclock_event_dump PRIVATE src/sw_clock)
+# Build swclock_event_dump and monitor_demo tools (not applicable on iOS)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_executable(swclock_event_dump src-tools/swclock_event_dump.c)
+    target_link_libraries(swclock_event_dump PRIVATE swclock)
+    target_include_directories(swclock_event_dump PRIVATE src/sw_clock)
 
-# Build monitor_demo tool (Recommendation 7)
-add_executable(monitor_demo src-tools/monitor_demo.c)
-target_link_libraries(monitor_demo PRIVATE swclock)
-target_include_directories(monitor_demo PRIVATE src/sw_clock)
+    # Build monitor_demo tool (Recommendation 7)
+    add_executable(monitor_demo src-tools/monitor_demo.c)
+    target_link_libraries(monitor_demo PRIVATE swclock)
+    target_include_directories(monitor_demo PRIVATE src/sw_clock)
+endif()
 
 # Installation rules
 # Skip tool installation for iOS (not applicable)
