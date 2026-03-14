@@ -1,10 +1,10 @@
 /**
  * @file sw_clock_commercial_log.c
  * @brief Commercial-Grade Logging Implementation
- * 
+ *
  * Production-ready logging infrastructure for regulatory compliance
  * and commercial deployment.
- * 
+ *
  * @author SwClock Development Team
  * @date 2026-02-10
  */
@@ -76,11 +76,11 @@ static void generate_uuid(char* uuid_out) {
             bytes[i] = rand() & 0xFF;
         }
     }
-    
+
     // Set version (4) and variant (RFC 4122)
     bytes[6] = (bytes[6] & 0x0F) | 0x40;
     bytes[8] = (bytes[8] & 0x3F) | 0x80;
-    
+
     snprintf(uuid_out, UUID_LENGTH,
              "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
              bytes[0], bytes[1], bytes[2], bytes[3],
@@ -101,7 +101,7 @@ static void get_iso8601_timestamp(char* buffer, size_t size) {
 /**
  * @brief Get system information
  */
-static void get_system_info(char* os, size_t os_size, 
+static void get_system_info(char* os, size_t os_size,
                             char* kernel, size_t kernel_size,
                             char* arch, size_t arch_size,
                             char* hostname, size_t hostname_size) {
@@ -125,22 +125,22 @@ swclock_commercial_config_t swclock_commercial_get_defaults(void) {
         .binary_event_log = true,
         .jsonld_structured_log = true,
         .servo_state_log = true,
-        
+
         // Audit compliance
         .automatic_integrity = true,
         .tamper_detection = true,
         .comprehensive_metadata = true,
-        
+
         // Performance
         .buffer_size_kb = 1024,
         .flush_interval_ms = 1000,
-        
+
         // Rotation
         .auto_rotation = true,
         .max_size_mb = 100,
         .max_files = 10,
         .compress_rotated = true,
-        
+
         // Paths (NULL = defaults)
         .log_directory = NULL,
         .run_id = NULL
@@ -153,14 +153,14 @@ int swclock_commercial_logging_init(const swclock_commercial_config_t* config) {
         SWCLOCK_LOG_WARN("Commercial logging already initialized");
         return -1;
     }
-    
+
     // Use defaults if no config provided
     if (config == NULL) {
         g_commercial_config = swclock_commercial_get_defaults();
     } else {
         g_commercial_config = *config;
     }
-    
+
     // Generate UUID for this run
     if (g_commercial_config.run_id == NULL) {
         generate_uuid(g_run_uuid);
@@ -168,11 +168,11 @@ int swclock_commercial_logging_init(const swclock_commercial_config_t* config) {
         strncpy(g_run_uuid, g_commercial_config.run_id, UUID_LENGTH - 1);
         g_run_uuid[UUID_LENGTH - 1] = '\0';
     }
-    
+
     // Create log directory
-    const char* log_dir = g_commercial_config.log_directory ? 
+    const char* log_dir = g_commercial_config.log_directory ?
                           g_commercial_config.log_directory : "logs";
-    
+
     struct stat st = {0};
     if (stat(log_dir, &st) == -1) {
         if (mkdir(log_dir, 0755) != 0) {
@@ -180,9 +180,9 @@ int swclock_commercial_logging_init(const swclock_commercial_config_t* config) {
             return -1;
         }
     }
-    
+
     g_commercial_logging_initialized = true;
-    
+
     SWCLOCK_LOG_INFO("Commercial logging initialized");
     SWCLOCK_LOG_INFO("Run ID: %s", g_run_uuid);
     SWCLOCK_LOG_INFO("Log Directory: %s/", log_dir);
@@ -190,7 +190,7 @@ int swclock_commercial_logging_init(const swclock_commercial_config_t* config) {
     SWCLOCK_LOG_INFO("JSON-LD: %s", g_commercial_config.jsonld_structured_log ? "ON" : "OFF");
     SWCLOCK_LOG_INFO("Servo State: %s", g_commercial_config.servo_state_log ? "ON" : "OFF");
     SWCLOCK_LOG_INFO("Integrity Protection: %s", g_commercial_config.automatic_integrity ? "ON" : "OFF");
-    
+
     return 0;
 }
 
@@ -198,37 +198,37 @@ int swclock_commercial_logging_finalize(void) {
     if (!g_commercial_logging_initialized) {
         return 0;  // Nothing to finalize
     }
-    
+
     SWCLOCK_LOG_INFO("Finalizing commercial logging...");
-    
+
     // Generate manifest
-    const char* log_dir = g_commercial_config.log_directory ? 
+    const char* log_dir = g_commercial_config.log_directory ?
                           g_commercial_config.log_directory : "logs";
-    
+
     if (swclock_generate_manifest(g_run_uuid, log_dir) != 0) {
         SWCLOCK_LOG_WARN("Failed to generate manifest");
     }
-    
+
     g_commercial_logging_initialized = false;
     SWCLOCK_LOG_INFO("Commercial logging finalized.");
-    
+
     return 0;
 }
 
 int swclock_write_commercial_csv_header(FILE* fp, const char* test_name, void* clock_ptr) {
     (void)clock_ptr;  // Reserved for future use
-    
+
     if (fp == NULL || test_name == NULL) {
         return -1;
     }
-    
+
     char timestamp[64];
     char os[64], kernel[256], arch[32], hostname[256];
-    
+
     get_iso8601_timestamp(timestamp, sizeof(timestamp));
-    get_system_info(os, sizeof(os), kernel, sizeof(kernel), 
+    get_system_info(os, sizeof(os), kernel, sizeof(kernel),
                     arch, sizeof(arch), hostname, sizeof(hostname));
-    
+
     // Generate comprehensive 36+ line header
     fprintf(fp, "# ========================================================================\n");
     fprintf(fp, "# SwClock Performance Test Data - Commercial Export\n");
@@ -275,7 +275,7 @@ int swclock_write_commercial_csv_header(FILE* fp, const char* test_name, void* c
     fprintf(fp, "# Verify with: swclock_verify_log_integrity()\n");
     fprintf(fp, "# ========================================================================\n");
     fprintf(fp, "timestamp_ns,te_ns\n");
-    
+
     return 0;
 }
 
@@ -283,54 +283,54 @@ int swclock_seal_log_file(const char* filepath) {
     if (filepath == NULL) {
         return -1;
     }
-    
+
     // Read entire file
     FILE* fp = fopen(filepath, "rb");
     if (fp == NULL) {
         SWCLOCK_LOG_ERROR("Failed to open file for sealing: %s", strerror(errno));
         return -1;
     }
-    
+
     // Get file size
     fseek(fp, 0, SEEK_END);
     long file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
-    
+
     if (file_size <= 0) {
         fclose(fp);
         return -1;
     }
-    
+
     // Read file contents
     unsigned char* buffer = malloc(file_size);
     if (buffer == NULL) {
         fclose(fp);
         return -1;
     }
-    
+
     size_t bytes_read = fread(buffer, 1, file_size, fp);
     fclose(fp);
-    
+
     if (bytes_read != (size_t)file_size) {
         free(buffer);
         return -1;
     }
-    
+
     // Compute SHA-256
     unsigned char hash[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(buffer, (CC_LONG)file_size, hash);
     free(buffer);
-    
+
     // Append signature block
     fp = fopen(filepath, "a");
     if (fp == NULL) {
         SWCLOCK_LOG_ERROR("Failed to open file for signature: %s", strerror(errno));
         return -1;
     }
-    
+
     char timestamp[64];
     get_iso8601_timestamp(timestamp, sizeof(timestamp));
-    
+
     fprintf(fp, "# ========================================================================\n");
     fprintf(fp, "# INTEGRITY SEAL\n");
     fprintf(fp, "# SHA256: ");
@@ -341,9 +341,9 @@ int swclock_seal_log_file(const char* filepath) {
     fprintf(fp, "# SEALED: %s\n", timestamp);
     fprintf(fp, "# ALGORITHM: SHA-256\n");
     fprintf(fp, "# ========================================================================\n");
-    
+
     fclose(fp);
-    
+
     SWCLOCK_LOG_INFO("Log file sealed: %s", filepath);
     return 0;
 }
@@ -352,21 +352,21 @@ int swclock_verify_log_integrity(const char* filepath, bool* out_valid) {
     if (filepath == NULL || out_valid == NULL) {
         return -1;
     }
-    
+
     *out_valid = false;
-    
+
     // Read file and extract signature
     FILE* fp = fopen(filepath, "r");
     if (fp == NULL) {
         return -1;
     }
-    
+
     // Find signature line
     char line[512];
     char stored_hash[65] = {0};
     bool found_signature = false;
     long data_end_pos = 0;
-    
+
     while (fgets(line, sizeof(line), fp)) {
         if (strstr(line, "# SHA256: ") != NULL) {
             sscanf(line, "# SHA256: %64s", stored_hash);
@@ -375,13 +375,13 @@ int swclock_verify_log_integrity(const char* filepath, bool* out_valid) {
             break;
         }
     }
-    
+
     if (!found_signature) {
         fclose(fp);
         SWCLOCK_LOG_WARN("No integrity signature found in file");
         return -1;
     }
-    
+
     // Read data portion (before signature)
     fseek(fp, 0, SEEK_SET);
     unsigned char* buffer = malloc(data_end_pos);
@@ -389,30 +389,30 @@ int swclock_verify_log_integrity(const char* filepath, bool* out_valid) {
         fclose(fp);
         return -1;
     }
-    
+
     size_t bytes_read = fread(buffer, 1, data_end_pos, fp);
     fclose(fp);
-    
+
     if (bytes_read != (size_t)data_end_pos) {
         free(buffer);
         return -1;
     }
-    
+
     // Compute hash
     unsigned char computed_hash[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(buffer, (CC_LONG)data_end_pos, computed_hash);
     free(buffer);
-    
+
     // Convert to hex string
     char computed_hash_str[65];
     for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
         sprintf(computed_hash_str + (i * 2), "%02x", computed_hash[i]);
     }
     computed_hash_str[64] = '\0';
-    
+
     // Compare
     *out_valid = (strcmp(stored_hash, computed_hash_str) == 0);
-    
+
     return 0;
 }
 
@@ -420,24 +420,24 @@ int swclock_generate_manifest(const char* run_id, const char* log_directory) {
     if (run_id == NULL || log_directory == NULL) {
         return -1;
     }
-    
+
     char manifest_path[512];
-    snprintf(manifest_path, sizeof(manifest_path), "%s/manifest_%s.json", 
+    snprintf(manifest_path, sizeof(manifest_path), "%s/manifest_%s.json",
              log_directory, run_id);
-    
+
     FILE* fp = fopen(manifest_path, "w");
     if (fp == NULL) {
         SWCLOCK_LOG_ERROR("Failed to create manifest: %s", strerror(errno));
         return -1;
     }
-    
+
     char timestamp[64];
     char hostname[256], os[64], kernel[256], arch[32];
-    
+
     get_iso8601_timestamp(timestamp, sizeof(timestamp));
-    get_system_info(os, sizeof(os), kernel, sizeof(kernel), 
+    get_system_info(os, sizeof(os), kernel, sizeof(kernel),
                     arch, sizeof(arch), hostname, sizeof(hostname));
-    
+
     // Write JSON manifest
     fprintf(fp, "{\n");
     fprintf(fp, "  \"manifest_version\": \"1.0\",\n");
@@ -465,9 +465,9 @@ int swclock_generate_manifest(const char* run_id, const char* log_directory) {
     fprintf(fp, "  },\n");
     fprintf(fp, "  \"log_files\": []\n");
     fprintf(fp, "}\n");
-    
+
     fclose(fp);
-    
+
     SWCLOCK_LOG_INFO("Manifest generated: %s", manifest_path);
     return 0;
 }

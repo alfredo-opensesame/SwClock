@@ -74,10 +74,10 @@ struct SwClock {
     // Reference epoch from hardware raw time (updated only by poll thread)
     struct timespec ref_mono_raw;
 
-    // Software clock bases at reference (updated only by poll thread) 
+    // Software clock bases at reference (updated only by poll thread)
     int64_t base_rt_ns;        // REALTIME
     int64_t base_mono_ns;      // disciplined synthetic timebase
-    
+
     // Cached total factor for gettime extrapolation
     double cached_total_factor;
 
@@ -119,7 +119,7 @@ struct SwClock {
     FILE* log_fp;         // CSV file handle
     bool  is_logging;     // true if logging is active
     bool  servo_log_enabled;  // true if SWCLOCK_SERVO_LOG was set at creation
-    
+
     // Event logging support (Priority 1 Recommendation 2)
     FILE* event_log_fp;             // Binary event log file
     bool  event_logging_enabled;    // Event logging active flag
@@ -127,10 +127,10 @@ struct SwClock {
     pthread_t event_logger_thread;  // Background logger thread
     bool event_logger_running;      // Logger thread status
     uint64_t event_sequence;        // Event sequence number
-    
+
     // Real-time monitoring (Priority 2 Recommendation 7)
     swclock_monitor_t* monitor;     // Monitoring context (NULL if disabled)
-    
+
     // JSON-LD structured logging (Priority 2 Recommendation 10)
     swclock_jsonld_logger_t* jsonld_logger;  // JSON-LD logger (NULL if disabled)
     bool monitoring_enabled;         // Monitoring active flag
@@ -156,7 +156,7 @@ static void swclock_rebase_now_and_update(SwClock* c) {
 
     double factor = total_factor(c);
     int64_t adj_elapsed_ns = (int64_t)((double)elapsed_raw_ns * factor);
-    
+
     DEBUG_LOG("rebase: elapsed_raw=%lld ns, factor=%.9f, adj_elapsed=%lld ns",
               (long long)elapsed_raw_ns, factor, (long long)adj_elapsed_ns);
 
@@ -174,7 +174,7 @@ static void swclock_rebase_now_and_update(SwClock* c) {
     double    base_factor      = scaledppm_to_factor(c->freq_scaled_ppm);
     double    delta_factor     = factor - base_factor;
     long long applied_phase_ns = (long long)((double)elapsed_raw_ns * delta_factor);
-    
+
     long long before_remaining = c->remaining_phase_ns;
 
     // Reduce remaining phase by what PI rate has effectively corrected
@@ -186,7 +186,7 @@ static void swclock_rebase_now_and_update(SwClock* c) {
             // The PI servo generates corrections opposite to the error, so this reduces the magnitude
             c->remaining_phase_ns -= applied_phase_ns;
         }
-        
+
         if (before_remaining != 0) {
             DEBUG_LOG("rebase: remaining_phase: %lld -> %lld ns (applied_phase=%lld ns)",
                       before_remaining, c->remaining_phase_ns, applied_phase_ns);
@@ -194,7 +194,7 @@ static void swclock_rebase_now_and_update(SwClock* c) {
     }
 
     c->ref_mono_raw = now_raw;
-    
+
     // Cache total factor for gettime extrapolation
     c->cached_total_factor = factor;
 }
@@ -206,7 +206,7 @@ void swclock_disable_pi_servo(SwClock* c)
     pthread_rwlock_wrlock(&c->lock);
     c->pi_servo_enabled = false;
     pthread_rwlock_unlock(&c->lock);
-    
+
     // Log PI disable event
     swclock_log_event(c, SWCLOCK_EVENT_PI_DISABLE, NULL, 0);
 }
@@ -258,7 +258,7 @@ static void swclock_pi_step(SwClock* c, double dt_s) {
     }
 
     c->pi_freq_ppm = u_ppm;
-    
+
     // Log frequency clamp event if clamped
     if (clamped) {
         swclock_event_frequency_clamp_payload_t clamp_payload = {
@@ -268,7 +268,7 @@ static void swclock_pi_step(SwClock* c, double dt_s) {
         };
         swclock_log_event(c, SWCLOCK_EVENT_FREQUENCY_CLAMP, &clamp_payload, sizeof(clamp_payload));
     }
-    
+
     // Log PI step event
     swclock_event_pi_step_payload_t pi_payload = {
         .pi_freq_ppm = c->pi_freq_ppm,
@@ -277,7 +277,7 @@ static void swclock_pi_step(SwClock* c, double dt_s) {
         .servo_enabled = c->pi_servo_enabled ? 1 : 0
     };
     swclock_log_event(c, SWCLOCK_EVENT_PI_STEP, &pi_payload, sizeof(pi_payload));
-    
+
     // JSON-LD logging
     if (c->jsonld_logger) {
         struct timespec ts;
@@ -293,7 +293,7 @@ static void swclock_pi_step(SwClock* c, double dt_s) {
         c->remaining_phase_ns = 0;
         c->pi_int_error_s     = 0.0;
         c->pi_freq_ppm        = 0.0;
-        c->max_observed_phase_error_s *= 0.0; 
+        c->max_observed_phase_error_s *= 0.0;
     }
 }
 
@@ -301,30 +301,30 @@ static void swclock_pi_step(SwClock* c, double dt_s) {
 static void swclock_update_error_estimates(SwClock* c) {
     // Current phase error in seconds
     double current_phase_error_s = fabs((double)c->remaining_phase_ns / 1e9);
-    
+
     // Update maximum observed phase error
     if (current_phase_error_s > c->max_observed_phase_error_s) {
         c->max_observed_phase_error_s = current_phase_error_s;
     }
-    
+
     // Update accumulated error variance (simple moving average approach)
     c->error_samples_count++;
     double alpha = 1.0 / (double)c->error_samples_count;
     if (c->error_samples_count > 100) alpha = 0.01; // Limit history to ~100 samples
-    
+
     double error_contribution = current_phase_error_s * current_phase_error_s;
     c->accumulated_error_variance = (1.0 - alpha) * c->accumulated_error_variance + alpha * error_contribution;
-    
+
     // Calculate maxerror: maximum observed + integral error contribution
     // Convert to microseconds (Linux convention)
     double max_error_s = c->max_observed_phase_error_s + fabs(c->pi_int_error_s);
     c->maxerror = (long)(max_error_s * 1e6);
-    
+
     // Calculate esterror: RMS of accumulated variance + PI frequency contribution
     // Higher PI frequency corrections indicate higher uncertainty
     double estimated_error_s = sqrt(c->accumulated_error_variance) + 0.1 * fabs(c->pi_freq_ppm) / 1e6;
     c->esterror = (long)(estimated_error_s * 1e6);
-    
+
     // Ensure reasonable bounds (max 1 second error estimates)
     if (c->maxerror > 1000000) c->maxerror = 1000000;
     if (c->esterror > 1000000) c->esterror = 1000000;
@@ -333,15 +333,15 @@ static void swclock_update_error_estimates(SwClock* c) {
 // Public poll: advance to now, then do one PI update based on elapsed dt.
 void swclock_poll(SwClock* c) {
     if (!c) return;
-    
+
     struct timespec poll_start;
     clock_gettime(CLOCK_REALTIME, &poll_start);
-    
+
     // Acquire write lock (exclusive) - no gettime() calls can proceed while poll updates
     pthread_rwlock_wrlock(&c->lock);
 
     struct timespec before = c->ref_mono_raw;
-    
+
     swclock_rebase_now_and_update(c);
 
     int64_t dt_ns = ts_to_ns(&c->ref_mono_raw) - ts_to_ns(&before);
@@ -350,7 +350,7 @@ void swclock_poll(SwClock* c) {
     if (c->pi_servo_enabled) {
         swclock_pi_step(c, dt_s);
     }
-    
+
     // Watchdog: detect stuck servo
     if (c->remaining_phase_ns != 0 && c->remaining_phase_ns == c->last_remaining_phase_ns) {
         c->stuck_poll_count++;
@@ -363,7 +363,7 @@ void swclock_poll(SwClock* c) {
     }
     c->last_remaining_phase_ns = c->remaining_phase_ns;
     c->last_poll_time = poll_start;
-    
+
     // Bounds checking
     if (llabs(c->remaining_phase_ns) > 1000000000LL) {  // >1 second
         DEBUG_LOG("WARNING: remaining_phase_ns out of bounds: %lld ns", c->remaining_phase_ns);
@@ -404,7 +404,7 @@ SwClock* swclock_create(void) {
     c->pi_servo_enabled   = true;
     c->remaining_phase_ns = 0;
     c->cached_total_factor = 1.0;
-    
+
     // Initialize watchdog
     c->last_remaining_phase_ns = 0;
     c->stuck_poll_count = 0;
@@ -415,32 +415,32 @@ SwClock* swclock_create(void) {
     c->accumulated_error_variance = 0.0;
     c->error_samples_count       = 0;
 
-    c->status   = 0; 
-    c->maxerror = 0; 
-    c->esterror = 0; 
-    c->constant = 0; 
-    c->tick     = 0; 
+    c->status   = 0;
+    c->maxerror = 0;
+    c->esterror = 0;
+    c->constant = 0;
+    c->tick     = 0;
     c->tai      = 0;
 
     c->stop_flag           = false;
     c->poll_thread_running = true;
-    
+
     // COMMERCIAL DEPLOYMENT: Enable servo logging by default (no environment variable required)
     // For production, comprehensive logging is always enabled unless explicitly disabled
     const char* disable_servo_log = getenv("SWCLOCK_DISABLE_SERVO_LOG");
     c->servo_log_enabled = (disable_servo_log == NULL || atoi(disable_servo_log) == 0);
-    
+
     // Initialize event logging fields
     c->event_log_fp = NULL;
     c->event_logging_enabled = false;
     c->event_logger_running = false;
     c->event_sequence = 0;
     swclock_ringbuf_init(&c->event_ringbuf);
-    
+
     // Initialize monitoring fields (Rec 7)
     c->monitor = NULL;
     c->monitoring_enabled = false;
-    
+
     // COMMERCIAL DEPLOYMENT: Enable JSON-LD structured logging by default
     // This provides audit-compliant logging for regulatory environments
     // Can be disabled with SWCLOCK_DISABLE_JSONLD=1 for embedded systems
@@ -481,19 +481,19 @@ void swclock_destroy(SwClock* c) {
         pthread_rwlock_wrlock(&c->lock);
         c->stop_flag = true;
         pthread_rwlock_unlock(&c->lock);
-        
+
         // Wait for thread to exit
         pthread_join(c->poll_thread, NULL);
-        
+
         // Now safely close the logs
         swclock_close_log(c);
         swclock_stop_event_log(c);
-        
+
         // Disable monitoring
         if (c->monitoring_enabled) {
             swclock_enable_monitoring(c, false);
         }
-        
+
         // Close JSON-LD logger
         if (c->jsonld_logger) {
             struct timespec ts;
@@ -504,17 +504,17 @@ void swclock_destroy(SwClock* c) {
             c->jsonld_logger = NULL;
         }
     }
-    
+
     pthread_rwlock_destroy(&c->lock);
-    
+
     free(c);
 }
 
 int swclock_gettime(SwClock* c, clockid_t clk_id, struct timespec *tp) {
-    
-    if (!c || !tp) 
-    { 
-        errno = EINVAL; 
+
+    if (!c || !tp)
+    {
+        errno = EINVAL;
         return -1;
     }
 
@@ -540,22 +540,22 @@ int swclock_gettime(SwClock* c, clockid_t clk_id, struct timespec *tp) {
             errno = EINVAL;
             return -1;
     }
-    
+
     struct timespec ref_time = c->ref_mono_raw;
     double factor = c->cached_total_factor;
-    
+
     pthread_rwlock_unlock(&c->lock);
-    
+
     // Extrapolate current time from last poll state (outside lock)
     struct timespec now_raw;
     clock_gettime(CLOCK_MONOTONIC_RAW, &now_raw);
-    
+
     int64_t elapsed_raw_ns = ts_to_ns(&now_raw) - ts_to_ns(&ref_time);
     if (elapsed_raw_ns < 0) elapsed_raw_ns = 0;
-    
+
     int64_t adj_elapsed_ns = (int64_t)((double)elapsed_raw_ns * factor);
     int64_t current_ns = base_ns + adj_elapsed_ns;
-    
+
     *tp = ns_to_ts(current_ns);
     return 0;
 }
@@ -595,7 +595,7 @@ int swclock_adjtime(SwClock* c, struct timex *tptr) {
     /* Base frequency bias (Darwin uses same scaled units: ppm * 2^-16) */
     if (modes & ADJ_FREQUENCY) {
         c->freq_scaled_ppm = tptr->freq;
-        
+
         // JSON-LD logging
         if (c->jsonld_logger) {
             struct timespec ts;
@@ -618,7 +618,7 @@ int swclock_adjtime(SwClock* c, struct timex *tptr) {
         c->remaining_phase_ns += delta_ns;               // PI will work this down
         c->pi_int_error_s = 0.0;
         c->pi_freq_ppm    = 0.0;
-        
+
         // JSON-LD logging
         if (c->jsonld_logger) {
             struct timespec ts;
@@ -651,7 +651,7 @@ int swclock_adjtime(SwClock* c, struct timex *tptr) {
         } else
         #endif
         {
-        
+
         // JSON-LD logging
         if (c->jsonld_logger) {
             struct timespec ts;
@@ -670,7 +670,7 @@ int swclock_adjtime(SwClock* c, struct timex *tptr) {
 
         /* Immediate step of REALTIME base */
         c->base_rt_ns += delta_ns;
-        
+
         /* CRITICAL: Reset PI servo state after immediate step
          * An immediate step changes the time base discontinuously, making any
          * prior phase correction target obsolete. The servo must not continue
@@ -702,7 +702,7 @@ int swclock_adjtime(SwClock* c, struct timex *tptr) {
     tptr->tai       = c->tai;
 
     pthread_rwlock_unlock(&c->lock);
-    
+
     // Log adjtime return event
     swclock_event_adjtime_payload_t adj_payload_return = {
         .modes = modes,
@@ -711,7 +711,7 @@ int swclock_adjtime(SwClock* c, struct timex *tptr) {
         .return_code = TIME_OK
     };
     swclock_log_event(c, SWCLOCK_EVENT_ADJTIME_RETURN, &adj_payload_return, sizeof(adj_payload_return));
-    
+
     return TIME_OK;
 }
 
@@ -734,11 +734,11 @@ void swclock_reset(SwClock* c) {
     c->pi_int_error_s     = 0.0;
     c->remaining_phase_ns = 0;
 
-    c->status   = 0; 
-    c->maxerror = 0; 
-    c->esterror = 0; 
-    c->constant = 0; 
-    c->tick     = 0; 
+    c->status   = 0;
+    c->maxerror = 0;
+    c->esterror = 0;
+    c->constant = 0;
+    c->tick     = 0;
     c->tai      = 0;
 
     c->stop_flag           = false;
@@ -775,7 +775,7 @@ static void* swclock_poll_thread_main(void* arg) {
             }
             pthread_rwlock_unlock(&c->lock);
         }
-        
+
         // JSON-LD ServoStateUpdate logging (independent of CSV logging)
         // Read servo state inside lock, then log outside to avoid blocking
         if (c->jsonld_logger && c->servo_log_enabled) {
@@ -786,15 +786,15 @@ static void* swclock_poll_thread_main(void* arg) {
             double pi_int_error_s_snapshot;
             bool servo_enabled_snapshot;
             uint64_t timestamp_ns;
-            
+
             pthread_rwlock_wrlock(&c->lock);
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
             timestamp_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-            
-            // Calculate phase and time errors  
+
+            // Calculate phase and time errors
             phase_error_ns_snapshot = c->remaining_phase_ns;
-            
+
             // Calculate SwClock time directly (don't call swclock_gettime while holding lock)
             struct timespec now_raw;
             clock_gettime(CLOCK_MONOTONIC_RAW, &now_raw);
@@ -804,14 +804,14 @@ static void* swclock_poll_thread_main(void* arg) {
             int64_t sw_time_ns = c->base_rt_ns + adj_elapsed_ns;
             int64_t sys_time_ns = (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
             time_error_ns_snapshot = sys_time_ns - sw_time_ns;
-            
+
             // Snapshot other servo state
             freq_ppm_snapshot = scaledppm_to_ppm(c->freq_scaled_ppm);
             pi_freq_ppm_snapshot = c->pi_freq_ppm;
             pi_int_error_s_snapshot = c->pi_int_error_s;
             servo_enabled_snapshot = c->pi_servo_enabled;
             pthread_rwlock_unlock(&c->lock);
-            
+
             // Log outside the critical section to avoid blocking other threads
             swclock_jsonld_log_servo(c->jsonld_logger, timestamp_ns,
                 freq_ppm_snapshot,
@@ -819,30 +819,30 @@ static void* swclock_poll_thread_main(void* arg) {
                 pi_freq_ppm_snapshot, pi_int_error_s_snapshot,
                 servo_enabled_snapshot);
         }
-        
+
         // Real-time monitoring: Add TE sample to circular buffer (Rec 7)
         if (c->monitoring_enabled && c->monitor) {
             // Compute Time Error: Reference_Time - SwClock_Disciplined_Time
             // Both must be in the same time domain (REALTIME)
-            
+
             // Reference: System's CLOCK_REALTIME (undisciplined)
             struct timespec sys_realtime;
             clock_gettime(CLOCK_REALTIME, &sys_realtime);
             int64_t ref_time_ns = ts_to_ns(&sys_realtime);
-            
+
             // SwClock's disciplined REALTIME
             struct timespec sw_realtime;
             swclock_gettime(c, CLOCK_REALTIME, &sw_realtime);
             int64_t swclock_time_ns = ts_to_ns(&sw_realtime);
-            
+
             // TE = Reference - SwClock (positive means SwClock is behind)
             int64_t te_ns = ref_time_ns - swclock_time_ns;
-            
+
             // Use MONOTONIC_RAW for timestamp (monotonic, steady reference)
             struct timespec now_mono;
             clock_gettime(CLOCK_MONOTONIC_RAW, &now_mono);
             uint64_t timestamp_ns = (uint64_t)ts_to_ns(&now_mono);
-            
+
             swclock_monitor_add_sample(c->monitor, timestamp_ns, te_ns);
         }
     }
@@ -859,7 +859,7 @@ void swclock_enable_PIServo(SwClock* c)
         c->pi_int_error_s   = 0.0;
         c->pi_freq_ppm      = 0.0;
         pthread_rwlock_unlock(&c->lock);
-        
+
         // Log PI enable event
         swclock_log_event(c, SWCLOCK_EVENT_PI_ENABLE, NULL, 0);
     }
@@ -888,7 +888,7 @@ bool swclock_is_PIServo_enabled(SwClock* c)
     pthread_rwlock_wrlock(&c->lock);
     is_enabled = c->pi_servo_enabled;
     pthread_rwlock_unlock(&c->lock);
-    
+
     return is_enabled;
 }
 
@@ -941,18 +941,18 @@ void swclock_start_log(SwClock* c, const char* filename) {
     c->is_logging = true;
 
     pthread_rwlock_unlock(&c->lock);
-    
+
     // Automatically start event logging if SWCLOCK_EVENT_LOG is set
     if (getenv("SWCLOCK_EVENT_LOG") != NULL) {
         // Generate event log filename based on CSV filename
         char event_log_path[512];
         snprintf(event_log_path, sizeof(event_log_path), "logs/events_%s.bin", datetime_buf);
-        
+
         // Replace colons and spaces in the filename for filesystem compatibility
         for (char* p = event_log_path; *p; p++) {
             if (*p == ':' || *p == ' ') *p = '-';
         }
-        
+
         if (swclock_start_event_log(c, event_log_path) == 0) {
             DEBUG_LOG("Event logging started: %s", event_log_path);
         } else {
@@ -997,13 +997,13 @@ void swclock_log(SwClock* c) {
         c->tai);
 
     fflush(c->log_fp);
-    
+
     // JSON-LD servo state logging
     if (c->jsonld_logger) {
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
         uint64_t timestamp_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-        
+
         // Calculate phase and time errors for the log
         int64_t phase_error_ns = c->remaining_phase_ns;
         // Time error: compare system REALTIME to SwClock REALTIME
@@ -1011,7 +1011,7 @@ void swclock_log(SwClock* c) {
         clock_gettime(CLOCK_REALTIME, &sys_realtime);
         swclock_gettime(c, CLOCK_REALTIME, &sw_realtime);
         int64_t time_error_ns = ts_to_ns(&sys_realtime) - ts_to_ns(&sw_realtime);
-        
+
         swclock_jsonld_log_servo(c->jsonld_logger, timestamp_ns,
             scaledppm_to_ppm(c->freq_scaled_ppm),
             phase_error_ns, time_error_ns,
@@ -1044,22 +1044,22 @@ static uint64_t swclock_get_timestamp_ns(void) {
 
 int swclock_start_event_log(SwClock* c, const char* filename) {
     if (!c || !filename) return -1;
-    
+
     pthread_rwlock_wrlock(&c->lock);
-    
+
     // Already logging
     if (c->event_logging_enabled) {
         pthread_rwlock_unlock(&c->lock);
         return -1;
     }
-    
+
     // Open binary log file
     c->event_log_fp = fopen(filename, "wb");
     if (!c->event_log_fp) {
         pthread_rwlock_unlock(&c->lock);
         return -1;
     }
-    
+
     // Write file header
     swclock_event_log_header_t header = {
         .magic = SWCLOCK_EVENT_LOG_MAGIC,
@@ -1068,7 +1068,7 @@ int swclock_start_event_log(SwClock* c, const char* filename) {
         .start_time_ns = swclock_get_timestamp_ns()
     };
     strncpy(header.swclock_version, SWCLOCK_VERSION, sizeof(header.swclock_version) - 1);
-    
+
     if (fwrite(&header, sizeof(header), 1, c->event_log_fp) != 1) {
         fclose(c->event_log_fp);
         c->event_log_fp = NULL;
@@ -1076,12 +1076,12 @@ int swclock_start_event_log(SwClock* c, const char* filename) {
         return -1;
     }
     fflush(c->event_log_fp);
-    
+
     // Initialize ring buffer
     swclock_ringbuf_init(&c->event_ringbuf);
     c->event_sequence = 0;
     c->event_logging_enabled = true;
-    
+
     // Start background logger thread
     c->event_logger_running = true;
     if (pthread_create(&c->event_logger_thread, NULL,
@@ -1093,53 +1093,53 @@ int swclock_start_event_log(SwClock* c, const char* filename) {
         pthread_rwlock_unlock(&c->lock);
         return -1;
     }
-    
+
     pthread_rwlock_unlock(&c->lock);
-    
+
     // Log start event
     swclock_log_event(c, SWCLOCK_EVENT_LOG_START, NULL, 0);
-    
+
     return 0;
 }
 
 void swclock_stop_event_log(SwClock* c) {
     if (!c) return;
-    
+
     pthread_rwlock_wrlock(&c->lock);
-    
+
     if (!c->event_logging_enabled) {
         pthread_rwlock_unlock(&c->lock);
         return;
     }
-    
+
     // Log stop event
     pthread_rwlock_unlock(&c->lock);
     swclock_log_event(c, SWCLOCK_EVENT_LOG_STOP, NULL, 0);
     pthread_rwlock_wrlock(&c->lock);
-    
+
     // Stop logger thread
     c->event_logger_running = false;
     pthread_rwlock_unlock(&c->lock);
-    
+
     pthread_join(c->event_logger_thread, NULL);
-    
+
     pthread_rwlock_wrlock(&c->lock);
-    
+
     // Close file
     if (c->event_log_fp) {
         fclose(c->event_log_fp);
         c->event_log_fp = NULL;
     }
-    
+
     c->event_logging_enabled = false;
-    
+
     pthread_rwlock_unlock(&c->lock);
 }
 
 void swclock_log_event(SwClock* c, swclock_event_type_t event_type,
                       const void* payload, size_t payload_size) {
     if (!c || !c->event_logging_enabled) return;
-    
+
     // Build event header
     swclock_event_header_t header = {
         .sequence_num = __atomic_fetch_add(&c->event_sequence, 1, __ATOMIC_SEQ_CST),
@@ -1148,14 +1148,14 @@ void swclock_log_event(SwClock* c, swclock_event_type_t event_type,
         .payload_size = (uint16_t)payload_size,
         .reserved = 0
     };
-    
+
     // Combine header + payload into single buffer
     uint8_t event_buffer[SWCLOCK_EVENT_MAX_SIZE];
     memcpy(event_buffer, &header, sizeof(header));
     if (payload && payload_size > 0) {
         memcpy(event_buffer + sizeof(header), payload, payload_size);
     }
-    
+
     // Push to ring buffer (non-blocking)
     swclock_ringbuf_push(&c->event_ringbuf, event_buffer,
                         sizeof(header) + payload_size);
@@ -1164,10 +1164,10 @@ void swclock_log_event(SwClock* c, swclock_event_type_t event_type,
 static void* swclock_event_logger_thread_main(void* arg) {
     SwClock* c = (SwClock*)arg;
     uint8_t event_buffer[SWCLOCK_EVENT_MAX_SIZE];
-    
+
     while (c->event_logger_running || !swclock_ringbuf_is_empty(&c->event_ringbuf)) {
         size_t event_size;
-        
+
         // Pop event from ring buffer
         if (swclock_ringbuf_pop(&c->event_ringbuf, event_buffer,
                                SWCLOCK_EVENT_MAX_SIZE, &event_size)) {
@@ -1183,13 +1183,13 @@ static void* swclock_event_logger_thread_main(void* arg) {
             struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000 }; // 1ms
             nanosleep(&ts, NULL);
         }
-        
+
         // Check for overruns
         if (swclock_ringbuf_clear_overrun(&c->event_ringbuf)) {
             SWCLOCK_LOG_WARN("Event ring buffer overrun detected");
         }
     }
-    
+
     return NULL;
 }
 
@@ -1200,9 +1200,9 @@ int swclock_enable_monitoring(SwClock* c, bool enable) {
         errno = EINVAL;
         return -1;
     }
-    
+
     pthread_rwlock_wrlock(&c->lock);
-    
+
     if (enable && !c->monitoring_enabled) {
         // Allocate and initialize monitor
         c->monitor = malloc(sizeof(swclock_monitor_t));
@@ -1210,7 +1210,7 @@ int swclock_enable_monitoring(SwClock* c, bool enable) {
             pthread_rwlock_unlock(&c->lock);
             return -1;
         }
-        
+
         // Initialize monitor with 10 Hz sample rate (SWCLOCK_POLL_HZ)
         if (swclock_monitor_init(c->monitor, 100.0) != 0) {
             free(c->monitor);
@@ -1218,7 +1218,7 @@ int swclock_enable_monitoring(SwClock* c, bool enable) {
             pthread_rwlock_unlock(&c->lock);
             return -1;
         }
-        
+
         // Start background computation thread
         if (swclock_monitor_start_compute_thread(c->monitor) != 0) {
             swclock_monitor_destroy(c->monitor);
@@ -1227,9 +1227,9 @@ int swclock_enable_monitoring(SwClock* c, bool enable) {
             pthread_rwlock_unlock(&c->lock);
             return -1;
         }
-        
+
         c->monitoring_enabled = true;
-        
+
     } else if (!enable && c->monitoring_enabled) {
         // Disable monitoring
         if (c->monitor) {
@@ -1237,10 +1237,10 @@ int swclock_enable_monitoring(SwClock* c, bool enable) {
             free(c->monitor);
             c->monitor = NULL;
         }
-        
+
         c->monitoring_enabled = false;
     }
-    
+
     pthread_rwlock_unlock(&c->lock);
     return 0;
 }
@@ -1250,23 +1250,23 @@ int swclock_get_metrics(SwClock* c, swclock_metrics_snapshot_t* snapshot) {
         errno = EINVAL;
         return -1;
     }
-    
+
     if (!c->monitoring_enabled || !c->monitor) {
         errno = ENOTSUP;
         return -1;
     }
-    
+
     return swclock_monitor_get_metrics(c->monitor, snapshot);
 }
 
 void swclock_set_thresholds(SwClock* c, const swclock_threshold_config_t* config) {
     if (!c || !config) return;
-    
+
     pthread_rwlock_wrlock(&c->lock);
-    
+
     if (c->monitoring_enabled && c->monitor) {
         swclock_monitor_set_thresholds(c->monitor, config);
     }
-    
+
     pthread_rwlock_unlock(&c->lock);
 }

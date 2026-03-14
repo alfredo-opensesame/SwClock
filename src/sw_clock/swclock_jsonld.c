@@ -1,13 +1,13 @@
 /**
  * @file swclock_jsonld.c
  * @brief JSON-LD structured logging for SwClock with IEEE 1588 compliance
- * 
+ *
  * Implements SwClock Interchange Format (SIF) v1.0.0 with:
  * - JSON-LD context with IEEE 1588 vocabulary
  * - Thread-safe buffered I/O (1MB buffer)
  * - Log rotation by size/time with gzip compression
  * - ISO 8601 timestamps with nanosecond precision
- * 
+ *
  * Part of IEEE Audit Recommendation 10: Log Format Standardization
  */
 
@@ -99,7 +99,7 @@ swclock_jsonld_logger_t* swclock_jsonld_init(
 
     /* Copy configuration */
     strncpy(logger->log_path, log_path, sizeof(logger->log_path) - 1);
-    
+
     if (rotation) {
         logger->rotation = *rotation;
     } else {
@@ -172,7 +172,7 @@ void swclock_jsonld_close(swclock_jsonld_logger_t* logger)
     /* Flush remaining buffer */
     pthread_mutex_lock(&logger->lock);
     flush_buffer(logger);
-    
+
     if (logger->fp) {
         fclose(logger->fp);
         logger->fp = NULL;
@@ -275,7 +275,7 @@ int swclock_jsonld_log_adjustment(
     char entry[SWCLOCK_JSONLD_MAX_SIZE];
     char ts_buf[64];
     char escaped_type[128];
-    
+
     format_iso8601_ns(timestamp_mono_ns, ts_buf, sizeof(ts_buf));
     json_escape_string(adjustment_type, escaped_type, sizeof(escaped_type));
 
@@ -360,7 +360,7 @@ int swclock_jsonld_log_alert(
     char entry[SWCLOCK_JSONLD_MAX_SIZE];
     char ts_buf[64];
     char escaped_metric[128], escaped_severity[64], escaped_standard[128];
-    
+
     format_iso8601_ns(timestamp_mono_ns, ts_buf, sizeof(ts_buf));
     json_escape_string(metric_name, escaped_metric, sizeof(escaped_metric));
     json_escape_string(severity, escaped_severity, sizeof(escaped_severity));
@@ -404,7 +404,7 @@ int swclock_jsonld_log_system(
     char entry[SWCLOCK_JSONLD_MAX_SIZE];
     char ts_buf[64];
     char escaped_type[128];
-    
+
     format_iso8601_ns(timestamp_mono_ns, ts_buf, sizeof(ts_buf));
     json_escape_string(event_type, escaped_type, sizeof(escaped_type));
     // details_json is already JSON, don't escape it
@@ -531,7 +531,7 @@ int swclock_jsonld_log_test(
     char entry[SWCLOCK_JSONLD_MAX_SIZE];
     char ts_buf[64];
     char escaped_test[256], escaped_status[64], escaped_csv[512];
-    
+
     format_iso8601_ns(timestamp_mono_ns, ts_buf, sizeof(ts_buf));
     json_escape_string(test_name, escaped_test, sizeof(escaped_test));
     json_escape_string(status, escaped_status, sizeof(escaped_status));

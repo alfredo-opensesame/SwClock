@@ -48,7 +48,7 @@ static void swclock_util_log(int priority, const char *format, ...) {
 // Force IntelliSense to see our definitions (redundant but fixes IDE warnings)
 #ifndef ADJ_FREQUENCY
 #define ADJ_FREQUENCY   0x0002
-#define ADJ_OFFSET      0x0001  
+#define ADJ_OFFSET      0x0001
 #define ADJ_NANO        0x2000
 #define ADJ_SETOFFSET   0x0100
 #define ADJ_STATUS      0x0010
@@ -123,7 +123,7 @@ void print_timespec_as_localtime(const struct timespec *ts)
 /* Future of leap seconds
  * At the 2022 World Radiocommunication Conference, it was agreed that:
  * Leap seconds will be suspended starting 2035 for at least a century.
- * That means the TAI–UTC offset will remain fixed (currently +37 s) for 
+ * That means the TAI–UTC offset will remain fixed (currently +37 s) for
  * decades unless a new scheme is adopted later.
  */
 #define TAI_OFFSET_2025 37  // seconds ahead of UTC as of Oct 2025
